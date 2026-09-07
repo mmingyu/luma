@@ -15,7 +15,6 @@ private func displayReconfigurationCallback(
     }
 }
 
-@MainActor
 final class LumaViewModel: ObservableObject {
     private enum DefaultsKey {
         static let autoDisable = "autoDisableWithExternalDisplay"
@@ -496,7 +495,7 @@ private struct LumaPanelView: View {
 }
 
 private struct PanelCard<Content: View>: View {
-    @ViewBuilder let content: Content
+    let content: Content
 
     init(@ViewBuilder content: () -> Content) {
         self.content = content()
@@ -517,7 +516,7 @@ private struct PanelRow<Accessory: View>: View {
     let icon: String
     let title: String
     let subtitle: String
-    @ViewBuilder let accessory: Accessory
+    let accessory: Accessory
 
     init(
         icon: String,
