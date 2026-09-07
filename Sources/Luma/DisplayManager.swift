@@ -38,6 +38,42 @@ enum DisplayManager {
         }
     }
 
+    enum MainDisplayKind {
+        case builtIn
+        case external
+        case unavailable
+
+        var menuDescription: String {
+            switch self {
+            case .builtIn:
+                return "Built-in"
+            case .external:
+                return "External"
+            case .unavailable:
+                return "Unknown"
+            }
+        }
+    }
+
+    struct StatusSnapshot {
+        let activeDisplayIDs: [CGDirectDisplayID]
+        let mainDisplayID: CGDirectDisplayID
+        let builtInInActiveList: Bool
+        let builtInInAllDisplayList: Bool?
+        let externalDisplayCount: Int
+        let mainDisplayKind: MainDisplayKind
+
+        var activeDisplayCount: Int {
+            activeDisplayIDs.count
+        }
+
+        /// True when CoreGraphics no longer sees the built-in panel as an active display.
+        /// This distinguishes a real disconnect from simply dimming/blackening the panel.
+        var builtInDisconnectedFromActiveList: Bool {
+            !builtInInActiveList
+        }
+    }
+
     private enum SkyLight {
         private static let frameworkPath = "/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight"
 
@@ -135,18 +171,44 @@ enum DisplayManager {
         return Array(displays.prefix(Int(count)))
     }
 
-    static func isBuiltInDisplayActive() -> Bool {
-        guard let displays = try? activeDisplays() else {
-            return false
+    static func statusSnapshot() throws -> StatusSnapshot {
+        let active = try activeDisplays()
+        let builtInInActiveList = active.contains { CGDisplayIsBuiltin($0) != 0 }
+        let externalCount = active.filter { CGDisplayIsBuiltin($0) == 0 }.count
+        let mainDisplayID = CGMainDisplayID()
+
+        let mainDisplayKind: MainDisplayKind
+        if !active.contains(mainDisplayID) {
+            mainDisplayKind = .unavailable
+        } else if CGDisplayIsBuiltin(mainDisplayID) != 0 {
+            mainDisplayKind = .builtIn
+        } else {
+            mainDisplayKind = .external
         }
-        return displays.contains { CGDisplayIsBuiltin($0) != 0 }
+
+        let builtInInAllDisplayList: Bool?
+        if isAppleSilicon, let all = try? allDisplays() {
+            builtInInAllDisplayList = all.contains { CGDisplayIsBuiltin($0) != 0 }
+        } else {
+            builtInInAllDisplayList = nil
+        }
+
+        return StatusSnapshot(
+            activeDisplayIDs: active,
+            mainDisplayID: mainDisplayID,
+            builtInInActiveList: builtInInActiveList,
+            builtInInAllDisplayList: builtInInAllDisplayList,
+            externalDisplayCount: externalCount,
+            mainDisplayKind: mainDisplayKind
+        )
+    }
+
+    static func isBuiltInDisplayActive() -> Bool {
+        (try? statusSnapshot().builtInInActiveList) ?? false
     }
 
     static func externalDisplayCount() -> Int {
-        guard let displays = try? activeDisplays() else {
-            return 0
-        }
-        return displays.filter { CGDisplayIsBuiltin($0) == 0 }.count
+        (try? statusSnapshot().externalDisplayCount) ?? 0
     }
 
     static func setBuiltInDisplayEnabled(_ enabled: Bool) throws {
@@ -160,7 +222,8 @@ enum DisplayManager {
             throw LumaError.symbolUnavailable("SLSConfigureDisplayEnabled")
         }
 
-        if !enabled, externalDisplayCount() == 0 {
+        let snapshot = try statusSnapshot()
+        if !enabled, snapshot.externalDisplayCount == 0 {
             throw LumaError.noExternalDisplay
         }
 
@@ -171,7 +234,7 @@ enum DisplayManager {
             }
             displayID = builtIn
         } else {
-            guard let builtIn = try activeDisplays().first(where: { CGDisplayIsBuiltin($0) != 0 }) else {
+            guard let builtIn = snapshot.activeDisplayIDs.first(where: { CGDisplayIsBuiltin($0) != 0 }) else {
                 throw LumaError.noBuiltInDisplay
             }
             displayID = builtIn
@@ -196,17 +259,17 @@ enum DisplayManager {
     }
 
     static func turnBuiltInDisplayOn() throws {
-        guard !isBuiltInDisplayActive() else { return }
+        guard !(try statusSnapshot()).builtInInActiveList else { return }
         try setBuiltInDisplayEnabled(true)
     }
 
     static func turnBuiltInDisplayOff() throws {
-        guard isBuiltInDisplayActive() else { return }
+        guard (try statusSnapshot()).builtInInActiveList else { return }
         try setBuiltInDisplayEnabled(false)
     }
 
     static func toggleBuiltInDisplay() throws {
-        if isBuiltInDisplayActive() {
+        if (try statusSnapshot()).builtInInActiveList {
             try turnBuiltInDisplayOff()
         } else {
             try turnBuiltInDisplayOn()
