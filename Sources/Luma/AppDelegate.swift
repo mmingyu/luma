@@ -23,7 +23,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let menu = NSMenu()
 
     private let statusMenuItem = NSMenuItem(title: "Built-in Display: Checking…", action: nil, keyEquivalent: "")
-    private let externalMenuItem = NSMenuItem(title: "External Displays: Checking…", action: nil, keyEquivalent: "")
+    private let activeListMenuItem = NSMenuItem(title: "Built-in in Active List: Checking…", action: nil, keyEquivalent: "")
+    private let allListMenuItem = NSMenuItem(title: "Built-in in SkyLight List: Checking…", action: nil, keyEquivalent: "")
+    private let mainDisplayMenuItem = NSMenuItem(title: "macOS Main Display: Checking…", action: nil, keyEquivalent: "")
+    private let displayCountMenuItem = NSMenuItem(title: "Active Displays: Checking…", action: nil, keyEquivalent: "")
     private let toggleMenuItem = NSMenuItem(title: "Toggle Built-in Display", action: nil, keyEquivalent: "")
     private let autoMenuItem = NSMenuItem(title: "Auto-disable with External Display", action: nil, keyEquivalent: "")
 
@@ -60,10 +63,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func configureMenu() {
         menu.delegate = self
 
-        statusMenuItem.isEnabled = false
-        externalMenuItem.isEnabled = false
-        menu.addItem(statusMenuItem)
-        menu.addItem(externalMenuItem)
+        for item in [statusMenuItem, activeListMenuItem, allListMenuItem, mainDisplayMenuItem, displayCountMenuItem] {
+            item.isEnabled = false
+            menu.addItem(item)
+        }
         menu.addItem(.separator())
 
         toggleMenuItem.target = self
@@ -76,7 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         menu.addItem(.separator())
 
-        let refreshItem = NSMenuItem(title: "Refresh", action: #selector(refreshFromMenu), keyEquivalent: "r")
+        let refreshItem = NSMenuItem(title: "Refresh Status", action: #selector(refreshFromMenu), keyEquivalent: "r")
         refreshItem.target = self
         menu.addItem(refreshItem)
 
@@ -136,18 +139,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func evaluateDisplayState() {
         pendingDisplayEvaluation = nil
 
-        let builtInActive = DisplayManager.isBuiltInDisplayActive()
-        let externalCount = DisplayManager.externalDisplayCount()
-        let autoDisable = UserDefaults.standard.bool(forKey: DefaultsKey.autoDisable)
-
         do {
+            let snapshot = try DisplayManager.statusSnapshot()
+            let autoDisable = UserDefaults.standard.bool(forKey: DefaultsKey.autoDisable)
+
             // Fail-safe: never intentionally leave the Mac with no active display.
-            if !builtInActive && externalCount == 0 {
+            if snapshot.builtInDisconnectedFromActiveList && snapshot.externalDisplayCount == 0 {
                 try DisplayManager.turnBuiltInDisplayOn()
-            } else if autoDisable && builtInActive && externalCount > 0 {
+            } else if autoDisable && snapshot.builtInInActiveList && snapshot.externalDisplayCount > 0 {
                 try DisplayManager.turnBuiltInDisplayOff()
-            } else if autoDisable && !builtInActive && externalCount == 0 {
-                try DisplayManager.turnBuiltInDisplayOn()
             }
         } catch {
             present(error: error)
@@ -157,28 +157,59 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func refreshMenu() {
-        let builtInActive = DisplayManager.isBuiltInDisplayActive()
-        let externalCount = DisplayManager.externalDisplayCount()
         let autoDisable = UserDefaults.standard.bool(forKey: DefaultsKey.autoDisable)
 
-        statusMenuItem.title = "Built-in Display: \(builtInActive ? "On" : "Off")"
-        externalMenuItem.title = "External Displays: \(externalCount)"
+        do {
+            let snapshot = try DisplayManager.statusSnapshot()
+            let builtInActive = snapshot.builtInInActiveList
 
-        if builtInActive {
-            toggleMenuItem.title = "Turn Built-in Display Off"
-            toggleMenuItem.isEnabled = externalCount > 0
-        } else {
-            toggleMenuItem.title = "Turn Built-in Display On"
-            toggleMenuItem.isEnabled = true
+            statusMenuItem.title = "Built-in Display: \(builtInActive ? "On" : "Off")"
+            activeListMenuItem.title = builtInActive
+                ? "Built-in in Active List: Yes — Recognized"
+                : "Built-in in Active List: No — Disconnected ✓"
+
+            switch snapshot.builtInInAllDisplayList {
+            case .some(true):
+                allListMenuItem.title = builtInActive
+                    ? "Built-in in SkyLight List: Yes"
+                    : "Built-in in SkyLight List: Yes — Disabled"
+            case .some(false):
+                allListMenuItem.title = "Built-in in SkyLight List: No"
+            case .none:
+                allListMenuItem.title = "Built-in in SkyLight List: Unknown"
+            }
+
+            mainDisplayMenuItem.title = "macOS Main Display: \(snapshot.mainDisplayKind.menuDescription)"
+            displayCountMenuItem.title = "Active Displays: \(snapshot.activeDisplayCount) (External: \(snapshot.externalDisplayCount))"
+
+            if builtInActive {
+                toggleMenuItem.title = "Turn Built-in Display Off"
+                toggleMenuItem.isEnabled = snapshot.externalDisplayCount > 0
+            } else {
+                toggleMenuItem.title = "Turn Built-in Display On"
+                toggleMenuItem.isEnabled = true
+            }
+
+            statusItem.button?.image = NSImage(
+                systemSymbolName: builtInActive ? "display.2" : "display",
+                accessibilityDescription: builtInActive ? "Built-in display active" : "Built-in display disconnected"
+            )
+            statusItem.button?.toolTip = builtInActive
+                ? "Luma — Built-in display is active"
+                : "Luma — Built-in display is absent from the CoreGraphics active list"
+        } catch {
+            statusMenuItem.title = "Built-in Display: Unknown"
+            activeListMenuItem.title = "Built-in in Active List: Read failed"
+            allListMenuItem.title = "Built-in in SkyLight List: Read failed"
+            mainDisplayMenuItem.title = "macOS Main Display: Unknown"
+            displayCountMenuItem.title = "Active Displays: Unknown"
+            toggleMenuItem.title = "Toggle Built-in Display"
+            toggleMenuItem.isEnabled = false
+            statusItem.button?.toolTip = "Luma — Could not read display status"
         }
 
         autoMenuItem.state = autoDisable ? .on : .off
         autoMenuItem.isEnabled = DisplayManager.isAppleSilicon
-
-        statusItem.button?.image = NSImage(
-            systemSymbolName: builtInActive ? "display.2" : "display",
-            accessibilityDescription: builtInActive ? "Built-in display on" : "Built-in display off"
-        )
         statusItem.button?.image?.isTemplate = true
     }
 
