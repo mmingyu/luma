@@ -8,6 +8,8 @@
     <string>Luma</string>
     <key>CFBundleExecutable</key>
     <string>Luma</string>
+    <key>CFBundleIconFile</key>
+    <string>Luma.icns</string>
     <key>CFBundleIdentifier</key>
     <string>com.mmingyu.luma</string>
     <key>CFBundleInfoDictionaryVersion</key>

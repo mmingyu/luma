@@ -8,12 +8,14 @@ export MACOSX_DEPLOYMENT_TARGET=13.0
 
 rm -rf dist
 mkdir -p dist/Luma.app/Contents/MacOS
+mkdir -p dist/Luma.app/Contents/Resources
 
 swift build -c release --arch arm64
 BIN_DIR="$(swift build -c release --arch arm64 --show-bin-path)"
 
 cp "$BIN_DIR/Luma" dist/Luma.app/Contents/MacOS/Luma
 cp packaging/Info.plist dist/Luma.app/Contents/Info.plist
+cp packaging/Luma.icns dist/Luma.app/Contents/Resources/Luma.icns
 
 chmod +x dist/Luma.app/Contents/MacOS/Luma
 
