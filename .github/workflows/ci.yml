@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Luma app
+        run: bash scripts/build-app.sh
+
+      - name: Verify Apple Silicon binary
+        run: |
+          test "$(lipo -archs dist/Luma.app/Contents/MacOS/Luma)" = "arm64"
+          codesign --verify --deep --strict dist/Luma.app
+          plutil -lint dist/Luma.app/Contents/Info.plist
+
+      - name: Upload app archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: Luma-macOS-arm64
+          path: dist/Luma-macOS-arm64.zip
+          if-no-files-found: error
