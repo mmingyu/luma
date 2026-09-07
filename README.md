@@ -45,7 +45,7 @@ Enable **Auto-disable with External Display** from the menu. Luma will disable t
 Requirements: Xcode Command Line Tools and macOS 13+.
 
 ```bash
-./scripts/build-app.sh
+bash scripts/build-app.sh
 open dist/Luma.app
 ```
 
